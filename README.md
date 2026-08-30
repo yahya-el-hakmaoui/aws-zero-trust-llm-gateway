@@ -1,2 +1,2 @@
 # aws-llm-security-gateway
-Secure gateway for LLM applications built with AWS, providing authentication, authorization, policy enforcement, Guardrails, rate limiting, and observability.
+A secure LLM gateway on AWS based on Zero Trust principles, providing authentication, authorization, policy enforcement, Guardrails, rate limiting, and observability.
