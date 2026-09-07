@@ -9,3 +9,11 @@ litellm_settings:
   drop_params: true
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
+vector_store_registry:
+  - vector_store_name: company-documents
+    litellm_params:
+      vector_store_id: ${bedrock_kb_id}
+      custom_llm_provider: bedrock
+      vector_store_description: Company internal documents
+      vector_store_metadata:
+        source: company-documents

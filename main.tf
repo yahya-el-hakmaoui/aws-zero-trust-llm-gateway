@@ -16,8 +16,9 @@ locals {
   )
 
   litellm_config = templatefile("${path.module}/config/litellm-config.yaml.tftpl", {
-    aws_region = var.aws_region
-    model_list = local.litellm_model_list
+    aws_region    = var.aws_region
+    model_list    = local.litellm_model_list
+    bedrock_kb_id = aws_bedrockagent_knowledge_base.rag.id
   })
 }
 
@@ -168,7 +169,10 @@ resource "aws_iam_role_policy" "ecs_task_litellm_bedrock" {
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream",
           "bedrock:ListFoundationModels",
-          "bedrock:GetFoundationModel"
+          "bedrock:GetFoundationModel",
+          "bedrock:Retrieve",
+          "bedrock:RetrieveAndGenerate",
+          "bedrock:RetrieveAndGenerateStream"
         ]
         Resource = "*"
       }
