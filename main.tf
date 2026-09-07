@@ -4,32 +4,21 @@ locals {
   litellm_base_url   = "http://litellm.${aws_service_discovery_private_dns_namespace.app.name}:4000/v1"
   litellm_master_key = "sk-${var.project_name}-litellm"
 
-  litellm_models = {
-    claude_haiku = {
-      model_name = "claude-haiku-4.5"
-      model_id   = "bedrock/eu.anthropic.claude-haiku-4-5-20251001-v1:0"
-    }
-    mistral_pixtral_large = {
-      model_name = "mistral-pixtral-large"
-      model_id   = "bedrock/eu.mistral.pixtral-large-2502-v1:0"
-    }
-    mistral_7b_instruct = {
-      model_name = "mistral-7b-instruct"
-      model_id   = "bedrock/mistral.mistral-7b-instruct-v0:2"
-    }
-    nova_micro = {
-      model_name = "nova-micro"
-      model_id   = "bedrock/eu.amazon.nova-micro-v1:0"
-    }
-    nova_lite = {
-      model_name = "nova-lite"
-      model_id   = "bedrock/eu.amazon.nova-lite-v1:0"
-    }
-    nova_2_lite = {
-      model_name = "nova-2-lite"
-      model_id   = "bedrock/eu.amazon.nova-2-lite-v1:0"
-    }
-  }
+  models_config = yamldecode(file("${path.module}/config/models.yaml"))
+
+  litellm_model_list = concat(
+    [
+      for name, model in try(local.models_config.chat, {}) : {
+        model_name = try(model.alias, name)
+        model      = "bedrock/${model.id}"
+      }
+    ]
+  )
+
+  litellm_config = templatefile("${path.module}/config/litellm-config.yaml.tftpl", {
+    aws_region = var.aws_region
+    model_list = local.litellm_model_list
+  })
 }
 
 resource "aws_vpc" "app" {
@@ -286,33 +275,7 @@ resource "aws_ecs_task_definition" "litellm" {
       command = [
         <<-EOT
 cat >/tmp/config.yaml <<'EOF'
-model_list:
-  - model_name: ${local.litellm_models.claude_haiku.model_name}
-    litellm_params:
-      model: "${local.litellm_models.claude_haiku.model_id}"
-      aws_region_name: "${var.aws_region}"
-  - model_name: ${local.litellm_models.mistral_pixtral_large.model_name}
-    litellm_params:
-      model: "${local.litellm_models.mistral_pixtral_large.model_id}"
-      aws_region_name: "${var.aws_region}"
-  - model_name: ${local.litellm_models.mistral_7b_instruct.model_name}
-    litellm_params:
-      model: "${local.litellm_models.mistral_7b_instruct.model_id}"
-      aws_region_name: "${var.aws_region}"
-  - model_name: ${local.litellm_models.nova_micro.model_name}
-    litellm_params:
-      model: "${local.litellm_models.nova_micro.model_id}"
-      aws_region_name: "${var.aws_region}"
-  - model_name: ${local.litellm_models.nova_lite.model_name}
-    litellm_params:
-      model: "${local.litellm_models.nova_lite.model_id}"
-      aws_region_name: "${var.aws_region}"
-  - model_name: ${local.litellm_models.nova_2_lite.model_name}
-    litellm_params:
-      model: "${local.litellm_models.nova_2_lite.model_id}"
-      aws_region_name: "${var.aws_region}"
-general_settings:
-  master_key: "os.environ/LITELLM_MASTER_KEY"
+${local.litellm_config}
 EOF
 exec litellm --config /tmp/config.yaml --host 0.0.0.0 --port 4000
 EOT

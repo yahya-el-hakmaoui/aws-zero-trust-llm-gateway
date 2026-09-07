@@ -1,0 +1,19 @@
+chat:
+  claude_haiku:
+    alias: claude-haiku-4.5
+    id: eu.anthropic.claude-haiku-4-5-20251001-v1:0
+  mistral_pixtral_large:
+    alias: mistral-pixtral-large
+    id: eu.mistral.pixtral-large-2502-v1:0
+  mistral_7b_instruct:
+    alias: mistral-7b-instruct
+    id: mistral.mistral-7b-instruct-v0:2
+  nova_micro:
+    alias: nova-micro
+    id: eu.amazon.nova-micro-v1:0
+  nova_lite:
+    alias: nova-lite
+    id: eu.amazon.nova-lite-v1:0
+  nova_2_lite:
+    alias: nova-2-lite
+    id: eu.amazon.nova-2-lite-v1:0

@@ -1,0 +1,11 @@
+model_list:
+%{ for model in model_list ~}
+  - model_name: ${model.model_name}
+    litellm_params:
+      model: "${model.model}"
+      aws_region_name: "${aws_region}"
+%{ endfor ~}
+litellm_settings:
+  drop_params: true
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
