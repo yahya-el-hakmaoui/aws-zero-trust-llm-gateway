@@ -1,8 +1,13 @@
 data "aws_region" "current" {}
 
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
 locals {
   litellm_base_url   = "http://litellm.${aws_service_discovery_private_dns_namespace.app.name}:4000/v1"
   litellm_master_key = "sk-${var.project_name}-litellm"
+  availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
 
   models_config = yamldecode(file("${path.module}/config/models.yaml"))
 
@@ -40,13 +45,45 @@ resource "aws_internet_gateway" "app" {
 }
 
 resource "aws_subnet" "public" {
+  count                   = 2
   vpc_id                  = aws_vpc.app.id
-  cidr_block              = cidrsubnet(aws_vpc.app.cidr_block, 8, 0)
+  cidr_block              = cidrsubnet(aws_vpc.app.cidr_block, 8, count.index)
+  availability_zone       = local.availability_zones[count.index]
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "${var.project_name}-public-1"
+    Name = "${var.project_name}-public-${count.index + 1}"
   }
+}
+
+resource "aws_subnet" "private" {
+  count             = 2
+  vpc_id            = aws_vpc.app.id
+  cidr_block        = cidrsubnet(aws_vpc.app.cidr_block, 8, count.index + 2)
+  availability_zone = local.availability_zones[count.index]
+
+  tags = {
+    Name = "${var.project_name}-private-${count.index + 1}"
+  }
+}
+
+resource "aws_eip" "nat" {
+  domain = "vpc"
+
+  tags = {
+    Name = "${var.project_name}-nat-eip"
+  }
+}
+
+resource "aws_nat_gateway" "app" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public[0].id
+
+  tags = {
+    Name = "${var.project_name}-nat"
+  }
+
+  depends_on = [aws_internet_gateway.app]
 }
 
 resource "aws_route_table" "public" {
@@ -63,8 +100,67 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
+  count          = 2
+  subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.app.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.app.id
+  }
+
+  tags = {
+    Name = "${var.project_name}-private-rt"
+  }
+}
+
+resource "aws_route_table_association" "private" {
+  count          = 2
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_lb" "app" {
+  name               = substr("${var.project_name}-alb", 0, 32)
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = [for subnet in aws_subnet.public : subnet.id]
+
+  tags = {
+    Name = "${var.project_name}-alb"
+  }
+}
+
+resource "aws_lb_target_group" "open_webui" {
+  name        = substr("${var.project_name}-open-webui", 0, 32)
+  port        = 80
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.app.id
+
+  health_check {
+    path                = "/"
+    protocol            = "HTTP"
+    matcher             = "200-399"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.app.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.open_webui.arn
+  }
 }
 
 resource "aws_cloudwatch_log_group" "open_webui" {
@@ -79,7 +175,28 @@ resource "aws_cloudwatch_log_group" "litellm" {
 
 resource "aws_security_group" "ecs_task" {
   name        = "${var.project_name}-ecs-task-sg"
-  description = "Allow internet traffic to Open WebUI"
+  description = "Allow ALB traffic to Open WebUI"
+  vpc_id      = aws_vpc.app.id
+
+  ingress {
+    description     = "HTTP from the ALB"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "alb" {
+  name        = "${var.project_name}-alb-sg"
+  description = "Allow inbound web traffic to the ALB"
   vpc_id      = aws_vpc.app.id
 
   ingress {
@@ -217,7 +334,11 @@ resource "aws_ecs_task_definition" "open_webui" {
   memory                   = 2048
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+  runtime_platform {
+    cpu_architecture        = "ARM64"
+    operating_system_family = "LINUX"
+  }
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
 
   container_definitions = jsonencode([
     {
@@ -263,8 +384,12 @@ resource "aws_ecs_task_definition" "litellm" {
   memory                   = 1024
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task_litellm.arn
+  runtime_platform {
+    cpu_architecture        = "ARM64"
+    operating_system_family = "LINUX"
+  }
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task_litellm.arn
 
   container_definitions = jsonencode([
     {
@@ -316,10 +441,16 @@ resource "aws_ecs_service" "open_webui" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
+  load_balancer {
+    target_group_arn = aws_lb_target_group.open_webui.arn
+    container_name   = "open-webui"
+    container_port   = 80
+  }
+
   network_configuration {
-    subnets          = [aws_subnet.public.id]
+    subnets          = [for subnet in aws_subnet.private : subnet.id]
     security_groups  = [aws_security_group.ecs_task.id]
-    assign_public_ip = true
+    assign_public_ip = false
   }
 }
 
@@ -335,8 +466,8 @@ resource "aws_ecs_service" "litellm" {
   }
 
   network_configuration {
-    subnets          = [aws_subnet.public.id]
+    subnets          = [for subnet in aws_subnet.private : subnet.id]
     security_groups  = [aws_security_group.litellm.id]
-    assign_public_ip = true
+    assign_public_ip = false
   }
 }

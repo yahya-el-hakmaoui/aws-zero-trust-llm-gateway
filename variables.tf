@@ -9,3 +9,8 @@ variable "project_name" {
   type        = string
   default     = "my-project"
 }
+
+variable "budget_notification_email" {
+  description = "Email address that receives AWS Budget alerts"
+  type        = string
+}
