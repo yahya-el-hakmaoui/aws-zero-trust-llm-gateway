@@ -14,3 +14,8 @@ variable "budget_notification_email" {
   description = "Email address that receives AWS Budget alerts"
   type        = string
 }
+
+variable "domain_name" {
+  description = "Root domain name, delegated to Route 53, used for ALB routing and ACM certificate"
+  type        = string
+}

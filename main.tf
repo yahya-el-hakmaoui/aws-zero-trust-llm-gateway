@@ -158,8 +158,123 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+resource "aws_lb_target_group" "litellm" {
+  name        = substr("${var.project_name}-litellm", 0, 32)
+  port        = 4000
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.app.id
+
+  health_check {
+    path                = "/health/liveliness"
+    protocol            = "HTTP"
+    matcher             = "200-399"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.app.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate_validation.app.certificate_arn
+
+  default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      status_code  = "404"
+      content_type = "text/plain"
+      message_body = "Not Found"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "app_host" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 10
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.open_webui.arn
+  }
+
+  condition {
+    host_header {
+      values = ["app.${var.domain_name}"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "api_host" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 20
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.litellm.arn
+  }
+
+  condition {
+    host_header {
+      values = ["api.${var.domain_name}"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "apex_redirect" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 30
+
+  action {
+    type = "redirect"
+
+    redirect {
+      host        = "app.${var.domain_name}"
+      path        = "/#{path}"
+      query       = "#{query}"
+      status_code = "HTTP_301"
+    }
+  }
+
+  condition {
+    host_header {
+      values = [var.domain_name]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "www_redirect" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 40
+
+  action {
+    type = "redirect"
+
+    redirect {
+      host        = "app.${var.domain_name}"
+      path        = "/#{path}"
+      query       = "#{query}"
+      status_code = "HTTP_301"
+    }
+  }
+
+  condition {
+    host_header {
+      values = ["www.${var.domain_name}"]
+    }
   }
 }
 
@@ -207,6 +322,14 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "HTTPS from the internet"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -226,6 +349,14 @@ resource "aws_security_group" "litellm" {
     to_port         = 4000
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs_task.id]
+  }
+
+  ingress {
+    description     = "ALB to LiteLLM"
+    from_port       = 4000
+    to_port         = 4000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
   }
 
   egress {
@@ -460,6 +591,12 @@ resource "aws_ecs_service" "litellm" {
   task_definition = aws_ecs_task_definition.litellm.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.litellm.arn
+    container_name   = "litellm"
+    container_port   = 4000
+  }
 
   service_registries {
     registry_arn = aws_service_discovery_service.litellm.arn
