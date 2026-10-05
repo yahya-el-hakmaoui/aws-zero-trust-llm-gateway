@@ -61,12 +61,6 @@ resource "aws_ecs_service" "litellm" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
-  load_balancer {
-    target_group_arn = aws_lb_target_group.litellm.arn
-    container_name   = "litellm"
-    container_port   = 4000
-  }
-
   service_registries {
     registry_arn = aws_service_discovery_service.litellm.arn
   }
