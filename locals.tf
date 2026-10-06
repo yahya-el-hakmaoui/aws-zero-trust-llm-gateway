@@ -6,7 +6,6 @@ data "aws_availability_zones" "available" {
 
 locals {
   litellm_base_url   = "http://litellm.${aws_service_discovery_private_dns_namespace.app.name}:4000/v1"
-  litellm_master_key = "sk-${var.project_name}-litellm"
   availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
 
   models_config = yamldecode(file("${path.module}/config/models.yaml"))

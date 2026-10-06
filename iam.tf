@@ -15,6 +15,20 @@ resource "aws_iam_role" "ecs_task_execution" {
   })
 }
 
+resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
+  name = "${var.project_name}-ecs-task-execution-secrets"
+  role = aws_iam_role.ecs_task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = [aws_secretsmanager_secret.litellm_master.arn]
+    }]
+  })
+}
+
 resource "aws_iam_role" "ecs_task_litellm" {
   name = "${var.project_name}-ecs-task-litellm-role"
 

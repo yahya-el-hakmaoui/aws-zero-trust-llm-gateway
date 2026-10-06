@@ -23,10 +23,12 @@ resource "aws_ecs_task_definition" "open_webui" {
         {
           name  = "OPENAI_API_BASE_URL"
           value = local.litellm_base_url
-        },
+        }
+      ]
+      secrets = [
         {
-          name  = "OPENAI_API_KEY"
-          value = local.litellm_master_key
+          name      = "OPENAI_API_KEY"
+          valueFrom = aws_secretsmanager_secret.litellm_master.arn
         }
       ]
       portMappings = [
@@ -54,6 +56,8 @@ resource "aws_ecs_service" "open_webui" {
   task_definition = aws_ecs_task_definition.open_webui.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+
+  depends_on = [aws_iam_role_policy.ecs_task_execution_secrets]
 
   load_balancer {
     target_group_arn = aws_lb_target_group.open_webui.arn

@@ -29,10 +29,12 @@ EOT
         {
           name  = "AWS_REGION_NAME"
           value = var.aws_region
-        },
+        }
+      ]
+      secrets = [
         {
-          name  = "LITELLM_MASTER_KEY"
-          value = local.litellm_master_key
+          name      = "LITELLM_MASTER_KEY"
+          valueFrom = aws_secretsmanager_secret.litellm_master.arn
         }
       ]
       portMappings = [
@@ -60,6 +62,8 @@ resource "aws_ecs_service" "litellm" {
   task_definition = aws_ecs_task_definition.litellm.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+
+  depends_on = [aws_iam_role_policy.ecs_task_execution_secrets]
 
   service_registries {
     registry_arn = aws_service_discovery_service.litellm.arn
