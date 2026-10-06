@@ -2,9 +2,12 @@ chat:
   claude_haiku:
     alias: claude-haiku-4.5
     id: eu.anthropic.claude-haiku-4-5-20251001-v1:0
-  mistral_pixtral_large:
-    alias: mistral-pixtral-large
-    id: eu.mistral.pixtral-large-2502-v1:0
+  claude_sonnet_4_6:
+    alias: claude-sonnet-4.6
+    id: eu.anthropic.claude-sonnet-4-6
+  kimi_k3:
+    alias: kimi-k3
+    id: global.moonshotai.kimi-k3
   mistral_7b_instruct:
     alias: mistral-7b-instruct
     id: mistral.mistral-7b-instruct-v0:2
